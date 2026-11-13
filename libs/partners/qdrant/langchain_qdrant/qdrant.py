@@ -1044,11 +1044,17 @@ class QdrantVectorStore(VectorStore):
     ) -> Generator[tuple[list[str | int], list[models.PointStruct]], Any, None]:
         texts_iterator = iter(texts)
         metadatas_iterator = iter(metadatas or [])
-        ids_iterator = iter(ids or [uuid.uuid4().hex for _ in iter(texts)])
+        # Do not build default ids up front: iterating `texts` to count them
+        # would consume a generator input before the batch loop runs.
+        ids_iterator = iter(ids) if ids else None
 
         while batch_texts := list(islice(texts_iterator, batch_size)):
             batch_metadatas = list(islice(metadatas_iterator, batch_size)) or None
-            batch_ids = list(islice(ids_iterator, batch_size))
+            batch_ids = (
+                list(islice(ids_iterator, batch_size))
+                if ids_iterator is not None
+                else [uuid.uuid4().hex for _ in batch_texts]
+            )
             points = [
                 models.PointStruct(
                     id=point_id,

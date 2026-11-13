@@ -141,3 +141,52 @@ def test_qdrant_add_texts_stores_ids(
     stored_ids = [point.id for point in vec_store.client.scroll(collection_name)[0]]
     assert set(ids) == set(stored_ids)
     assert len(vec_store.get_by_ids(ids)) == 3
+
+
+@pytest.mark.parametrize("location", qdrant_locations())
+@pytest.mark.parametrize("batch_size", [1, 64])
+def test_qdrant_add_texts_with_generator_input(location: str, batch_size: int) -> None:
+    """Test `add_texts` stores texts passed as a generator.
+
+    Regression test: passing a generator used to store nothing and return `[]`,
+    because the default ids were built up front by iterating `texts`, which
+    consumed the generator before the batch loop ran.
+    """
+    collection_name = uuid.uuid4().hex
+    docsearch = QdrantVectorStore.from_texts(
+        ["seed"],
+        ConsistentFakeEmbeddings(),
+        collection_name=collection_name,
+        location=location,
+    )
+
+    ids = docsearch.add_texts(
+        (text for text in ["alpha", "beta", "gamma"]), batch_size=batch_size
+    )
+    assert len(ids) == 3
+    assert len(set(ids)) == 3
+    assert docsearch.client.count(collection_name).count == 4
+    assert len(docsearch.get_by_ids(ids)) == 3
+
+
+@pytest.mark.parametrize("location", qdrant_locations())
+def test_qdrant_add_texts_with_generator_and_explicit_ids(location: str) -> None:
+    """Test `add_texts` with a generator and explicit ids stores all texts."""
+    collection_name = uuid.uuid4().hex
+    docsearch = QdrantVectorStore.from_texts(
+        ["seed"],
+        ConsistentFakeEmbeddings(),
+        collection_name=collection_name,
+        location=location,
+    )
+
+    ids = [
+        uuid.uuid4().hex,
+        uuid.uuid4().hex,
+        uuid.uuid4().hex,
+    ]
+    returned = docsearch.add_texts(
+        (text for text in ["alpha", "beta", "gamma"]), ids=ids
+    )
+    assert returned == ids
+    assert docsearch.client.count(collection_name).count == 4
