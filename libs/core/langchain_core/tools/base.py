@@ -1472,14 +1472,26 @@ def _is_message_content_block(obj: Any) -> bool:
 def _stringify(content: Any) -> str:
     """Convert content to string, preferring JSON format.
 
+    Pydantic models are serialized with `model_dump(mode="json")` so a tool
+    returning a model yields JSON instead of the Python repr.
+
     Args:
         content: The content to stringify.
 
     Returns:
         String representation of the content.
     """
+
+    def _default(obj: Any) -> Any:
+        if isinstance(obj, BaseModel):
+            return obj.model_dump(mode="json")
+        if isinstance(obj, BaseModelV1):
+            return obj.dict()
+        msg = f"Object of type {type(obj).__name__} is not JSON serializable"
+        raise TypeError(msg)
+
     try:
-        return json.dumps(content, ensure_ascii=False)
+        return json.dumps(content, ensure_ascii=False, default=_default)
     except Exception:
         return str(content)
 

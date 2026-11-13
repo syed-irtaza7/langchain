@@ -76,6 +76,7 @@ from langchain_core.tools.base import (
     _format_output,
     _is_message_content_block,
     _normalize_message_content,
+    _stringify,
     create_schema_from_function,
     get_all_basemodel_annotations,
 )
@@ -4665,6 +4666,66 @@ def test_format_output_empty_list() -> None:
     assert isinstance(result, ToolMessage)
     assert result.content == []
     assert result.tool_call_id == "0"
+
+
+class _SampleOutput(BaseModel):
+    """Sample pydantic model used to test model output stringification."""
+
+    text: str
+    count: int = 0
+
+
+def test_format_output_pydantic_model_is_json() -> None:
+    """A tool returning a pydantic model yields JSON, not the Python repr."""
+    result = _format_output(
+        _SampleOutput(text="a\tb", count=2),
+        artifact=None,
+        tool_call_id="0",
+        name="t",
+        status="success",
+    )
+    assert isinstance(result, ToolMessage)
+    assert result.content == '{"text": "a\\tb", "count": 2}'
+    assert json.loads(result.content) == {"text": "a\tb", "count": 2}
+
+
+def test_format_output_pydantic_model_nested_in_dict_and_list() -> None:
+    """Pydantic models nested in dicts/lists are serialized as JSON."""
+    result = _format_output(
+        {"item": _SampleOutput(text="x"), "items": [_SampleOutput(text="y")]},
+        artifact=None,
+        tool_call_id="0",
+        name="t",
+        status="success",
+    )
+    assert isinstance(result, ToolMessage)
+    assert json.loads(result.content) == {
+        "item": {"text": "x", "count": 0},
+        "items": [{"text": "y", "count": 0}],
+    }
+
+
+def test_format_output_plain_dict_and_list_unchanged() -> None:
+    """Plain dicts/lists still stringify to JSON as before."""
+    result = _format_output(
+        {"a": 1, "b": ["x", "y"]},
+        artifact=None,
+        tool_call_id="0",
+        name="t",
+        status="success",
+    )
+    assert isinstance(result, ToolMessage)
+    assert json.loads(result.content) == {"a": 1, "b": ["x", "y"]}
+
+
+def test_stringify_falls_back_to_str_for_unserializable() -> None:
+    """Objects that are not JSON serializable still fall back to str()."""
+
+    class _NotSerializable:
+        def __repr__(self) -> str:
+            return "<not-serializable>"
+
+    assert _stringify(_NotSerializable()) == "<not-serializable>"
 
 
 def test_tool_invoke_returns_list_of_mixin() -> None:
